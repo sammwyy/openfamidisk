@@ -35,6 +35,9 @@ class DiskMemory(list):
         self.stream = list(stream)
         self.inserted = inserted
         self.ppu = []
+        self.vram = {}
+        self.ppu_addr = 0
+        self.ppu_addr_high = True
         self.controls = []
         self.audio = []
         self[0xDFFC:0xDFFE] = [0, 0xC0]
@@ -49,15 +52,24 @@ class DiskMemory(list):
         if key == 0x4032:
             return int(not self.inserted)
         if key == 0x2002:
+            self.ppu_addr_high = True
             return 0x80
         return super().__getitem__(key)
 
     def __setitem__(self, key, value):
+        if key == 0x2006:
+            if self.ppu_addr_high:
+                self.ppu_addr = (value & 0x3F) << 8
+            else:
+                self.ppu_addr = (self.ppu_addr & 0x3F00) | value
+            self.ppu_addr_high = not self.ppu_addr_high
         if key == 0x2007:
             self.ppu.append(value)
+            self.vram[self.ppu_addr] = value
+            self.ppu_addr = (self.ppu_addr + 1) & 0x3FFF
         if key == 0x4025:
             self.controls.append(value)
-        if key in (0x400A, 0x400B, 0x4015):
+        if isinstance(key, int) and (0x4000 <= key <= 0x400F or key == 0x4015):
             self.audio.append((key, value))
         super().__setitem__(key, value)
 
@@ -105,8 +117,10 @@ class BiosTests(unittest.TestCase):
         self.assertEqual(mem[0xFF], 0x90)
         self.assertGreater(len(mem.ppu), 1024)
         self.assertEqual(mem.ppu[-6:], [30, 31, 32, 33, 32, 31])
-        self.assertEqual(mem[0x4008], 0xFF)
-        self.assertEqual(mem[0x400A], 0x59)
+        self.assertEqual(mem[0x4000], 0x98)
+        self.assertEqual(mem[0x4004], 0x72)
+        self.assertEqual(mem[0x4008], 0x0E)
+        self.assertEqual(mem[0x400C], 0x31)
         self.assertEqual(mem[0x4015], 0)
 
     def test_loading_animation_preserves_cpu_registers(self):
@@ -118,30 +132,101 @@ class BiosTests(unittest.TestCase):
             run_until(cpu, 0xE1F8)
         self.assertEqual((cpu.a, cpu.x, cpu.y), (0x42, 0x21, 0x17))
         self.assertEqual(mem[0x14], 48)
-        self.assertEqual(mem.ppu[-2:], [0x26, 0x30])
+        self.assertEqual((mem.vram[0x3F05], mem.vram[0x3F09]), (0x26, 0x30))
 
-    def test_loading_tune_repeats_with_rests(self):
+    def test_stars_scroll_left_and_wrap_without_touching_the_title(self):
         cpu, mem = machine(inserted=False)
         run_until(cpu, 0xE1F8)
-        notes = [0x59, 0x54, 0x4B, 0, 0x38, 0x54, 0x59, 0x54,
-                 0x4B, 0x38, 0x2C, 0x29, 0x2C, 0x3B, 0x38, 0,
-                 0x4B, 0, 0x59, 0x54, 0x4B, 0, 0x38, 0x31,
-                 0x3B, 0x38, 0x31, 0x29, 0x2C, 0x29, 0x31, 0]
+        positions = [0x2002, 0x200D, 0x2019, 0x2025, 0x2033, 0x203E,
+                     0x2041, 0x204A, 0x2057, 0x2067, 0x2072, 0x207D,
+                     0x2083, 0x208E, 0x209A, 0x20A9, 0x20B6,
+                     0x20C0, 0x20CC, 0x20DB, 0x20E6, 0x20F1,
+                     0x2284, 0x2291, 0x229C, 0x22A2, 0x22AD, 0x22B9,
+                     0x22C8, 0x22D4, 0x22E5, 0x22FB]
+        fixed = (0x2146, 0x2184, 0x219B, 0x21C9, 0x21CD,
+                 0x2266, 0x232A, 0x236D)
+        title = {address: mem.vram[address] for address in fixed}
+        self.assertEqual((mem.vram[0x23C0], mem.vram[0x23C1],
+                          mem.vram[0x23E8], mem.vram[0x23E9]), (0xBB, 0xEE, 0xBB, 0xEE))
+        self.assertEqual([mem.vram[0x12A0 + row] for row in range(8)],
+                         [0, 16, 56, 124, 56, 16, 0, 0])
+        self.assertEqual([mem.vram[0x12B0 + row] for row in range(8)],
+                         [0, 0, 24, 60, 24, 0, 0, 0])
+        self.assertEqual([mem.vram[0x12C0 + row] for row in range(8)],
+                         [0, 24, 60, 126, 126, 60, 24, 0])
+        self.assertEqual([mem.vram[0x12D0 + row] for row in range(8)],
+                         [0, 0, 0, 24, 24, 0, 0, 0])
+        for phase in range(33):
+            for index, address in enumerate(positions):
+                shifted = (address & ~31) | ((address - phase) & 31)
+                self.assertEqual(mem.vram[shifted], 42 + (index + phase) % 4)
+                if phase:
+                    old = (address & ~31) | ((address - phase + 1) & 31)
+                    self.assertEqual(mem.vram[old], 0)
+            self.assertEqual({address: mem.vram[address] for address in title}, title)
+            if phase == 32:
+                break
+            for _ in range(8):
+                cpu.nmi()
+                run_until(cpu, 0xE1F8)
+        self.assertEqual(mem[0x1C], 0)
+        self.assertEqual(mem[0x1D], 0)
+
+    def test_star_palettes_cycle_independently_of_border(self):
+        cpu, mem = machine(inserted=False)
+        run_until(cpu, 0xE1F8)
+        self.assertEqual((mem.vram[0x3F05], mem.vram[0x3F09], mem.vram[0x3F0D]),
+                         (0x28, 0x30, 0x3C))
+        for border, warm, cool in [(0x27, 0x28, 0x2C), (0x26, 0x30, 0x3C),
+                                   (0x30, 0x27, 0x30), (0x28, 0x30, 0x3C)]:
+            for _ in range(8):
+                cpu.nmi()
+                run_until(cpu, 0xE1F8)
+            self.assertEqual((mem.vram[0x3F05], mem.vram[0x3F09], mem.vram[0x3F0D]),
+                             (border, warm, cool))
+
+    def test_loading_arrangement_repeats_with_sustained_notes(self):
+        cpu, mem = machine(inserted=False)
+        run_until(cpu, 0xE1F8)
+        notes = [0x96, 0, 0x86, 0, 0xC9, 0xB3, 0, 0xE1,
+                 0xBD, 0xC9, 0xE1, 0, 0xE1, 0, 0xC9, 0,
+                 0xBD, 0, 0xBD, 0xC9, 0xE1, 0xC9, 0xB3, 0x96,
+                 0x86, 0xB3, 0x96, 0xC9, 0xBD, 0xE1, 0xC9, 0xE1]
+        harmony = [0x52, 0xC4, 0x2D, 0x93, 0x67, 0xDF, 0x0C, 0x67,
+                   0x93, 0x0C, 0x2D, 0x93, 0xC4, 0x2D, 0xC4, 0x2D]
+        bass = [0x52, 0x2D, 0x67, 0x0C, 0x93, 0x2D, 0xC4, 0xC4]
         for index, note in enumerate(notes + notes[:2]):
             for _ in range(5):
                 cpu.nmi()
                 run_until(cpu, 0xE1F8)
-            self.assertEqual(mem[0x4015], 4 if index and notes[(index - 1) % 32] else 0)
+            previous_audio = len(mem.audio)
             cpu.nmi()
             run_until(cpu, 0xE1F8)
-            self.assertEqual(mem[0x4015], 4 if note else 0)
+            position = index % 32
+            mask = 7
+            if position % 4 == 0:
+                mask |= 8
+            self.assertEqual(mem[0x4015], mask)
+            writes = mem.audio[previous_audio:]
             if note:
-                self.assertEqual(mem[0x400A], note)
-                self.assertEqual(mem.audio[-3:], [(0x400A, note), (0x4015, 4), (0x400B, 0)])
+                self.assertEqual(mem[0x4002], note)
+                self.assertEqual(mem[0x4003], 0)
+            self.assertEqual((0x4003, 0) in writes, bool(note))
+            if position % 2 == 0:
+                self.assertEqual(mem[0x4006], harmony[position // 2])
+                self.assertIn((0x4007, 1), writes)
             else:
-                self.assertEqual(mem.audio[-1], (0x4015, 0))
+                self.assertNotIn(0x4007, [address for address, _ in writes])
+            if position % 4 == 0:
+                self.assertEqual(mem[0x400A], bass[position // 4])
+                self.assertIn((0x400B, 0x21), writes)
+                self.assertEqual(mem[0x400E], 0x8C if position % 8 == 0 else 6)
+                self.assertEqual(mem[0x400F], 0x18)
+            else:
+                self.assertNotIn(0x400B, [address for address, _ in writes])
+                self.assertNotIn(0x400F, [address for address, _ in writes])
             self.assertEqual(mem[0x1A], 0)
-            self.assertEqual(mem[0x1B], (index + 1) % 32)
+            self.assertEqual(mem[0x1B], (position + 1) % 32)
 
     def test_loading_cue_waits_for_visible_screen(self):
         cpu, mem = machine(inserted=False)
@@ -149,7 +234,9 @@ class BiosTests(unittest.TestCase):
         for _ in range(8):
             cpu.nmi()
             run_until(cpu, 0xE1F8)
-        self.assertEqual(mem[0x4015], 4)
+        self.assertEqual(mem[0x4015], 15)
+        stars = dict(mem.vram)
+        phase = mem[0x1C:0x1E]
         mem[0x17] = 1
         cpu.nmi()
         run_until(cpu, 0xE1F8)
@@ -160,6 +247,8 @@ class BiosTests(unittest.TestCase):
             cpu.nmi()
             run_until(cpu, 0xE1F8)
         self.assertEqual(mem[0x4015], 0)
+        self.assertEqual(mem.vram, stars)
+        self.assertEqual(mem[0x1C:0x1E], phase)
         mem[0x17] = 0
         for _ in range(5):
             cpu.nmi()
@@ -167,8 +256,8 @@ class BiosTests(unittest.TestCase):
         self.assertEqual(mem[0x4015], 0)
         cpu.nmi()
         run_until(cpu, 0xE1F8)
-        self.assertEqual(mem[0x4015], 4)
-        self.assertEqual(mem[0x400A], 0x59)
+        self.assertEqual(mem[0x4015], 15)
+        self.assertEqual(mem[0x4002], 0x96)
 
     def test_explicit_file_list_and_ppu_transfer(self):
         stream = disk([(0, 0x6100, 0, b"\x33"), (7, 0x0200, 1, b"\x01\x02\x03")])

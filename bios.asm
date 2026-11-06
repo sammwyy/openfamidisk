@@ -32,6 +32,9 @@ boxlow = $18
 boxhigh = $19
 cueframe = $1a
 cueindex = $1b
+staroffset = $1c
+starindex = $1d
+starrow = $1e
 
 FILLVALUE $ff
 ORG $e000
@@ -792,10 +795,11 @@ ShowLoading:
     sta PPUADDR
     lda #$c0
     sta PPUADDR
-    lda #$aa
+    lda #$bb
     ldx #16
 @starattr:
     sta PPUDATA
+    eor #$55
     dex
     bne @starattr
     lda #$55
@@ -804,10 +808,11 @@ ShowLoading:
     sta PPUDATA
     dex
     bne @boxattr
-    lda #$a5
+    lda #$bb
     ldx #8
 @lowerattr:
     sta PPUDATA
+    eor #$55
     dex
     bne @lowerattr
     lda #0
@@ -825,13 +830,13 @@ ShowLoading:
     sta PPUADDR
     txa
     lsr a
-    and #1
+    and #3
     clc
     adc #42
     sta PPUDATA
     inx
     inx
-    cpx #40
+    cpx #64
     bne @stars
     lda PPUSTATUS
     lda #$21
@@ -958,10 +963,19 @@ ShowLoading:
     lda #0
     sta cueframe
     sta cueindex
-    lda #$ff
+    sta staroffset
+    sta starindex
+    lda #$98
+    sta $4000
+    lda #$08
+    sta $4001
+    sta $4005
+    lda #$72
+    sta $4004
+    lda #$0e
     sta $4008
-    lda #$59
-    sta $400a
+    lda #$31
+    sta $400c
     lda #0
     sta $4015
     lda #$90
@@ -1107,17 +1121,55 @@ LoadingNMI:
     lda #0
     sta cueframe
     ldx cueindex
+    txa
+    and #3
+    bne @play
+    txa
+    and #7
+    bne @snare
+    lda #$8c
+    bne @noise
+@snare:
+    lda #6
+@noise:
+    sta $400e
+    lda #$0f
+    sta $4015
+    lda #$18
+    sta $400f
+    jmp @notes
+@play:
+    lda #7
+    sta $4015
+@notes:
     lda LoadingTune,x
-    beq @rest
+    beq @harmony
+    sta $4002
+    lda #0
+    sta $4003
+@harmony:
+    txa
+    and #1
+    bne @bass
+    txa
+    lsr a
+    tay
+    lda LoadingHarmony,y
+    sta $4006
+    lda #1
+    sta $4007
+@bass:
+    txa
+    and #3
+    bne @advancecue
+    txa
+    lsr a
+    lsr a
+    tay
+    lda LoadingBass,y
     sta $400a
-    lda #4
-    sta $4015
-    lda #0
+    lda #$21
     sta $400b
-    jmp @advancecue
-@rest:
-    lda #0
-    sta $4015
 @advancecue:
     inx
     cpx #32
@@ -1128,7 +1180,7 @@ LoadingNMI:
 @color:
     lda frame
     and #7
-    bne @done
+    bne @stars
     lda frame
     lsr a
     lsr a
@@ -1150,6 +1202,15 @@ LoadingNMI:
     lda StarColors,x
     sta PPUDATA
     lda PPUSTATUS
+    lda #$3f
+    sta PPUADDR
+    lda #$0d
+    sta PPUADDR
+    lda StarGlowColors,x
+    sta PPUDATA
+@stars:
+    jsr ScrollLoadingStars
+    lda PPUSTATUS
     lda #0
     sta $2005
     sta $2005
@@ -1163,21 +1224,85 @@ LoadingNMI:
     pla
     rti
 
+ScrollLoadingStars:
+    ldy #4
+    ldx starindex
+@next:
+    lda StarPositions,x
+    and #$e0
+    sta starrow
+    lda PPUSTATUS
+    lda StarPositions+1,x
+    sta PPUADDR
+    lda StarPositions,x
+    and #31
+    sec
+    sbc staroffset
+    and #31
+    ora starrow
+    sta PPUADDR
+    lda #0
+    sta PPUDATA
+    lda PPUSTATUS
+    lda StarPositions+1,x
+    sta PPUADDR
+    lda StarPositions,x
+    and #31
+    sec
+    sbc staroffset
+    sec
+    sbc #1
+    and #31
+    ora starrow
+    sta PPUADDR
+    txa
+    lsr a
+    clc
+    adc staroffset
+    adc #1
+    and #3
+    clc
+    adc #42
+    sta PPUDATA
+    inx
+    inx
+    cpx #64
+    bne @store
+    ldx #0
+    inc staroffset
+    lda staroffset
+    and #31
+    sta staroffset
+@store:
+    dey
+    bne @next
+    stx starindex
+    rts
+
 LoadingPalette:
     db $0f,$30,$28,$00,$0f,$28,$30,$0f
-    db $0f,$30,$28,$00,$0f,$30,$28,$00
+    db $0f,$30,$28,$00,$0f,$3c,$30,$00
 LoadingTune:
-    db $59,$54,$4b,0,$38,$54,$59,$54
-    db $4b,$38,$2c,$29,$2c,$3b,$38,0
-    db $4b,0,$59,$54,$4b,0,$38,$31
-    db $3b,$38,$31,$29,$2c,$29,$31,0
+    db $96,0,$86,0,$c9,$b3,0,$e1
+    db $bd,$c9,$e1,0,$e1,0,$c9,0
+    db $bd,0,$bd,$c9,$e1,$c9,$b3,$96
+    db $86,$b3,$96,$c9,$bd,$e1,$c9,$e1
+LoadingHarmony:
+    db $52,$c4,$2d,$93,$67,$df,$0c,$67
+    db $93,$0c,$2d,$93,$c4,$2d,$c4,$2d
+LoadingBass:
+    db $52,$2d,$67,$0c,$93,$2d,$c4,$c4
 BorderColors:
     db $28,$27,$26,$30
 StarColors:
-    db $30,$28,$30,$28
+    db $30,$28,$30,$27
+StarGlowColors:
+    db $3c,$2c,$3c,$30
 StarPositions:
-    dw $2010,$2027,$2042,$205b,$206e,$2086,$2098,$20a3,$20bd,$20ce
-    dw $20e7,$20f8,$22a1,$22bb,$22c5,$22d9,$22e1,$22f2,$22fa,$22e9
+    dw $2002,$200d,$2019,$2025,$2033,$203e,$2041,$204a
+    dw $2057,$2067,$2072,$207d,$2083,$208e,$209a,$20a9
+    dw $20b6,$20c0,$20cc,$20db,$20e6,$20f1,$2284,$2291
+    dw $229c,$22a2,$22ad,$22b9,$22c8,$22d4,$22e5,$22fb
 TitleTop:
     db 1,3,5,0,7,3,9,11,13,1,15,17,17,17
 TitleBottom:
@@ -1231,8 +1356,8 @@ LoadingFont:
     db $ff,$00,$00,$00,$00,$00,$00,$00
     db $00,$10,$38,$7c,$38,$10,$00,$00
     db $00,$00,$18,$3c,$18,$00,$00,$00
-    db $00,$00,$00,$00,$00,$00,$00,$00
-    db $7e,$7e,$7e,$7e,$7e,$7e,$7e,$7e
+    db $00,$18,$3c,$7e,$7e,$3c,$18,$00
+    db $00,$00,$00,$18,$18,$00,$00,$00
     db $00,$00,$00,$00,$00,$00,$00,$00
     db $00,$00,$00,$00,$00,$00,$00,$00
 
