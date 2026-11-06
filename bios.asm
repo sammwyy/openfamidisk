@@ -27,6 +27,10 @@ scratch = $12
 frame = $14
 blockready = $15
 loadingactive = $16
+loadingtransfer = $17
+boxlow = $18
+boxhigh = $19
+cueframe = $1a
 
 FILLVALUE $ff
 ORG $e000
@@ -48,6 +52,13 @@ Delayms:
 
 PAD $e18b
 NMI:
+    pha
+    lda loadingactive
+    beq @game
+    pla
+    jmp LoadingNMI
+@game:
+    pla
     bit $0100
     bmi @third
     bvs @first
@@ -383,6 +394,8 @@ Reset:
     sta MASTERIO
     sta frame
     sta loadingactive
+    sta loadingtransfer
+    sta cueframe
     sta $4010
     lda #$c0
     sta $4017
@@ -599,6 +612,7 @@ LoadEngine:
     beq @data
     ldx loadingactive
     beq @ppuaddr
+    stx loadingtransfer
     ldx #$06
     stx $fe
     stx PPUMASK
@@ -656,6 +670,8 @@ LoadEngine:
     lda #$0a
     sta $fe
     sta PPUMASK
+    lda #0
+    sta loadingtransfer
 @skiploading:
     lda selected
     bne @skipcount
@@ -746,10 +762,13 @@ ShowLoading:
     sta PPUADDR
     lda #0
     sta PPUADDR
-    lda #$01
+    ldx #0
+@palette:
+    lda LoadingPalette,x
     sta PPUDATA
-    lda #$30
-    sta PPUDATA
+    inx
+    cpx #16
+    bne @palette
     lda PPUSTATUS
     lda #$20
     sta PPUADDR
@@ -764,17 +783,164 @@ ShowLoading:
     dex
     bne @clear
     lda PPUSTATUS
-    lda #$21
+    lda #$23
     sta PPUADDR
-    lda #$cc
+    lda #$c0
     sta PPUADDR
-    ldx #1
-@text:
+    lda #$aa
+    ldx #16
+@starattr:
+    sta PPUDATA
+    dex
+    bne @starattr
+    lda #$55
+    ldx #24
+@boxattr:
+    sta PPUDATA
+    dex
+    bne @boxattr
+    lda #$a5
+    ldx #8
+@lowerattr:
+    sta PPUDATA
+    dex
+    bne @lowerattr
+    lda #0
+    ldx #16
+@footerattr:
+    sta PPUDATA
+    dex
+    bne @footerattr
+    ldx #0
+@stars:
+    lda PPUSTATUS
+    lda StarPositions+1,x
+    sta PPUADDR
+    lda StarPositions,x
+    sta PPUADDR
     txa
+    lsr a
+    and #1
+    clc
+    adc #42
     sta PPUDATA
     inx
-    cpx #8
-    bne @text
+    inx
+    cpx #40
+    bne @stars
+    lda PPUSTATUS
+    lda #$21
+    sta PPUADDR
+    lda #$46
+    sta PPUADDR
+    ldx #20
+    lda #38
+@top:
+    sta PPUDATA
+    dex
+    bne @top
+    lda PPUSTATUS
+    lda #$22
+    sta PPUADDR
+    lda #$66
+    sta PPUADDR
+    ldx #20
+    lda #41
+@bottom:
+    sta PPUDATA
+    dex
+    bne @bottom
+    lda PPUSTATUS
+    lda #$21
+    sta PPUADDR
+    lda #$65
+    sta PPUADDR
+    lda #34
+    sta PPUDATA
+    lda PPUSTATUS
+    lda #$21
+    sta PPUADDR
+    lda #$7a
+    sta PPUADDR
+    lda #35
+    sta PPUDATA
+    lda PPUSTATUS
+    lda #$22
+    sta PPUADDR
+    lda #$45
+    sta PPUADDR
+    lda #36
+    sta PPUDATA
+    lda PPUSTATUS
+    lda #$22
+    sta PPUADDR
+    lda #$5a
+    sta PPUADDR
+    lda #37
+    sta PPUDATA
+    lda #$84
+    sta boxlow
+    lda #$21
+    sta boxhigh
+    ldy #6
+@sides:
+    lda PPUSTATUS
+    lda boxhigh
+    sta PPUADDR
+    lda boxlow
+    sta PPUADDR
+    lda #40
+    sta PPUDATA
+    lda PPUSTATUS
+    lda boxhigh
+    sta PPUADDR
+    lda boxlow
+    clc
+    adc #23
+    sta PPUADDR
+    lda #39
+    sta PPUDATA
+    clc
+    lda boxlow
+    adc #32
+    sta boxlow
+    bcc @nextside
+    inc boxhigh
+@nextside:
+    dey
+    bne @sides
+    lda #<TitleTop
+    sta ptr
+    lda #>TitleTop
+    sta ptr+1
+    lda #$21
+    ldx #$c9
+    ldy #14
+    jsr WriteLoadingRow
+    lda #<TitleBottom
+    sta ptr
+    lda #>TitleBottom
+    sta ptr+1
+    lda #$21
+    ldx #$e9
+    ldy #14
+    jsr WriteLoadingRow
+    lda #<LoadingBrand
+    sta ptr
+    lda #>LoadingBrand
+    sta ptr+1
+    lda #$23
+    ldx #$2a
+    ldy #12
+    jsr WriteLoadingRow
+    lda #<LoadingVersion
+    sta ptr
+    lda #>LoadingVersion
+    sta ptr+1
+    lda #$23
+    ldx #$6d
+    ldy #6
+    jsr WriteLoadingRow
     lda PPUSTATUS
     lda #0
     sta $2005
@@ -784,44 +950,77 @@ ShowLoading:
     sta PPUMASK
     lda #1
     sta loadingactive
+    lda #$ff
+    sta $4008
+    lda #$6a
+    sta $400a
+    lda #0
+    sta $4015
+    lda #$90
+    sta $ff
+    sta PPUCTRL
     rts
 
 HideLoading:
+    lda #1
+    sta loadingtransfer
+    lda #0
+    sta $4015
+    lda #$10
+    sta $ff
+    sta PPUCTRL
     lda #$06
     sta $fe
     sta PPUMASK
     jsr RestoreLoadingTiles
     lda #0
     sta loadingactive
+    sta loadingtransfer
     rts
 
 SaveLoadingTiles:
+    lda #0
+    sta ptr
     lda PPUSTATUS
     lda #$10
     sta PPUADDR
     lda #0
     sta PPUADDR
     lda PPUDATA
-    ldx #0
+    ldx #4
+@page:
+    stx ptr+1
+    ldy #0
 @read:
     lda PPUDATA
-    sta $0400,x
+    sta (ptr),y
+    iny
+    bne @read
     inx
-    bpl @read
+    cpx #7
+    bne @page
     rts
 
 RestoreLoadingTiles:
+    lda #0
+    sta ptr
     lda PPUSTATUS
     lda #$10
     sta PPUADDR
     lda #0
     sta PPUADDR
-    ldx #0
+    ldx #4
+@page:
+    stx ptr+1
+    ldy #0
 @write:
-    lda $0400,x
+    lda (ptr),y
     sta PPUDATA
+    iny
+    bne @write
     inx
-    bpl @write
+    cpx #7
+    bne @page
     rts
 
 DrawLoadingFont:
@@ -830,38 +1029,212 @@ DrawLoadingFont:
     sta PPUADDR
     lda #0
     sta PPUADDR
-    ldx #16
-@blank:
-    sta PPUDATA
-    dex
-    bne @blank
+    lda #<LoadingFont
+    sta ptr
+    lda #>LoadingFont
+    sta ptr+1
+    ldx #48
+@tile:
     ldy #0
-@font:
-    ldx #8
 @row:
-    lda LoadingFont,y
+    lda (ptr),y
     sta PPUDATA
     iny
-    dex
+    cpy #8
     bne @row
-    ldx #8
-    lda #0
+    clc
+    lda ptr
+    adc #8
+    sta ptr
+    bcc @plane
+    inc ptr+1
 @plane:
+    ldy #8
+    lda #0
+@zero:
     sta PPUDATA
+    dey
+    bne @zero
     dex
-    bne @plane
-    cpy #56
-    bne @font
+    bne @tile
     rts
 
+WriteLoadingRow:
+    sta boxhigh
+    stx boxlow
+    sty scratch
+    lda PPUSTATUS
+    lda boxhigh
+    sta PPUADDR
+    lda boxlow
+    sta PPUADDR
+    ldy #0
+@write:
+    lda (ptr),y
+    sta PPUDATA
+    iny
+    cpy scratch
+    bne @write
+    rts
+
+LoadingNMI:
+    pha
+    txa
+    pha
+    tya
+    pha
+    inc frame
+    lda loadingtransfer
+    beq @visible
+    lda cueframe
+    beq @paused
+    cmp #$ff
+    beq @paused
+    lda #0
+    sta cueframe
+    sta $4015
+@paused:
+    jmp @done
+@visible:
+    lda cueframe
+    cmp #$ff
+    beq @color
+    inc cueframe
+    lda cueframe
+    cmp #12
+    beq @do
+    cmp #24
+    beq @re
+    cmp #36
+    beq @mi
+    cmp #48
+    beq @mute
+    jmp @color
+@do:
+    lda #$04
+    sta $4015
+    lda #$6a
+    bne @note
+@re:
+    lda #$5e
+    bne @note
+@mi:
+    lda #$54
+@note:
+    sta $400a
+    lda #0
+    sta $400b
+    jmp @color
+@mute:
+    lda #0
+    sta $4015
+    lda #$ff
+    sta cueframe
+@color:
+    lda frame
+    and #7
+    bne @done
+    lda frame
+    lsr a
+    lsr a
+    lsr a
+    and #3
+    tax
+    lda PPUSTATUS
+    lda #$3f
+    sta PPUADDR
+    lda #$05
+    sta PPUADDR
+    lda BorderColors,x
+    sta PPUDATA
+    lda PPUSTATUS
+    lda #$3f
+    sta PPUADDR
+    lda #$09
+    sta PPUADDR
+    lda StarColors,x
+    sta PPUDATA
+    lda PPUSTATUS
+    lda #0
+    sta $2005
+    sta $2005
+    lda $ff
+    sta PPUCTRL
+@done:
+    pla
+    tay
+    pla
+    tax
+    pla
+    rti
+
+LoadingPalette:
+    db $0f,$30,$28,$00,$0f,$28,$30,$0f
+    db $0f,$30,$28,$00,$0f,$30,$28,$00
+BorderColors:
+    db $28,$27,$26,$30
+StarColors:
+    db $30,$28,$30,$28
+StarPositions:
+    dw $2010,$2027,$2042,$205b,$206e,$2086,$2098,$20a3,$20bd,$20ce
+    dw $20e7,$20f8,$22a1,$22bb,$22c5,$22d9,$22e1,$22f2,$22fa,$22e9
+TitleTop:
+    db 1,3,5,0,7,3,9,11,13,1,15,17,17,17
+TitleBottom:
+    db 2,4,6,0,8,4,10,12,14,2,16,18,18,18
+LoadingBrand:
+    db 19,20,21,22,23,24,25,26,27,26,28,29
+LoadingVersion:
+    db 30,31,32,33,32,31
 LoadingFont:
-    db $60,$60,$60,$60,$60,$60,$7e,$00
+    db $00,$00,$00,$00,$00,$00,$00,$00
+    db $73,$73,$7b,$7b,$7f,$7f,$7f,$7f
+    db $77,$77,$73,$73,$73,$73,$00,$00
+    db $3e,$3e,$77,$77,$77,$77,$77,$77
+    db $77,$77,$77,$77,$3e,$3e,$00,$00
+    db $77,$77,$77,$77,$77,$77,$7f,$7f
+    db $7f,$7f,$7f,$7f,$77,$77,$00,$00
+    db $70,$70,$70,$70,$70,$70,$70,$70
+    db $70,$70,$70,$70,$7f,$7f,$00,$00
+    db $1c,$1c,$3e,$3e,$77,$77,$77,$77
+    db $7f,$7f,$77,$77,$77,$77,$00,$00
+    db $7e,$7e,$77,$77,$77,$77,$77,$77
+    db $77,$77,$77,$77,$7e,$7e,$00,$00
+    db $3e,$3e,$1c,$1c,$1c,$1c,$1c,$1c
+    db $1c,$1c,$1c,$1c,$3e,$3e,$00,$00
+    db $3e,$3e,$77,$77,$70,$70,$7f,$7f
+    db $77,$77,$77,$77,$3e,$3e,$00,$00
+    db $00,$00,$00,$00,$00,$00,$00,$00
+    db $00,$00,$1c,$1c,$1c,$1c,$00,$00
     db $3c,$66,$66,$66,$66,$66,$3c,$00
-    db $18,$3c,$66,$66,$7e,$66,$66,$00
-    db $7c,$66,$66,$66,$66,$66,$7c,$00
-    db $3c,$18,$18,$18,$18,$18,$3c,$00
-    db $66,$76,$7e,$7e,$6e,$66,$66,$00
-    db $3c,$66,$60,$6e,$66,$66,$3c,$00
+    db $00,$00,$7c,$66,$66,$7c,$60,$60
+    db $00,$00,$3c,$66,$7e,$60,$3c,$00
+    db $00,$00,$7c,$66,$66,$66,$66,$00
+    db $7e,$60,$60,$7c,$60,$60,$60,$00
+    db $00,$00,$3c,$06,$3e,$66,$3e,$00
+    db $00,$00,$7c,$7e,$6a,$6a,$6a,$00
+    db $18,$00,$38,$18,$18,$18,$3c,$00
+    db $06,$06,$3e,$66,$66,$66,$3e,$00
+    db $00,$00,$3e,$60,$3c,$06,$7c,$00
+    db $60,$60,$6c,$78,$70,$78,$6c,$00
+    db $00,$00,$66,$66,$66,$3c,$18,$00
+    db $3c,$66,$6e,$76,$66,$66,$3c,$00
+    db $00,$00,$00,$00,$00,$18,$18,$00
+    db $18,$38,$18,$18,$18,$18,$3c,$00
+    db $01,$03,$07,$0e,$1c,$38,$70,$e0
+    db $80,$c0,$e0,$70,$38,$1c,$0e,$07
+    db $e0,$70,$38,$1c,$0e,$07,$03,$01
+    db $07,$0e,$1c,$38,$70,$e0,$c0,$80
+    db $00,$00,$00,$00,$00,$00,$00,$ff
+    db $80,$80,$80,$80,$80,$80,$80,$80
+    db $01,$01,$01,$01,$01,$01,$01,$01
+    db $ff,$00,$00,$00,$00,$00,$00,$00
+    db $00,$10,$38,$7c,$38,$10,$00,$00
+    db $00,$00,$18,$3c,$18,$00,$00,$00
+    db $00,$00,$00,$00,$00,$00,$00,$00
+    db $7e,$7e,$7e,$7e,$7e,$7e,$7e,$7e
+    db $00,$00,$00,$00,$00,$00,$00,$00
+    db $00,$00,$00,$00,$00,$00,$00,$00
 
 PAD $fffa
     dw NMI,Reset,IRQ

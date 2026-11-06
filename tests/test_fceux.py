@@ -26,27 +26,50 @@ class FceuxTests(unittest.TestCase):
             script = home / "test.lua"
             script.write_text(
                 'local out = assert(io.open(os.getenv("HOME") .. "/result", "w"))\n'
-                'local loading, booted, running = false, false, false\n'
+                'local loading, animated, booted, running = false, false, false, false\n'
+                'local heard, early, stopped = false, false, false\n'
+                'local gold, coral, bright, dim = false, false, false, false\n'
                 'for frame = 1, 660 do\n'
                 '    emu.frameadvance()\n'
-                '    loading = loading or (memory.readbyte(0xFE) == 0x0A\n'
-                '        and ppu.readbyte(0x21CC) == 1 and ppu.readbyte(0x1010) == 0x60)\n'
+                '    local visible = memory.readbyte(0xFE) == 0x0A\n'
+                '        and ppu.readbyte(0x21C9) == 1 and ppu.readbyte(0x21CD) == 7\n'
+                '        and ppu.readbyte(0x232A) == 19 and ppu.readbyte(0x236D) == 30\n'
+                '        and ppu.readbyte(0x1010) == 0x73\n'
+                '    loading = loading or visible\n'
+                '    if memory.readbyte(0x0102) ~= 0x35 then\n'
+                '        local triangle = math.floor(memory.readbyte(0x4015) / 4) % 2 == 1\n'
+                '        if triangle then\n'
+                '            heard = true\n'
+                '            early = early or not visible\n'
+                '        elseif heard then\n'
+                '            stopped = true\n'
+                '        end\n'
+                '    end\n'
+                '    if loading and memory.readbyte(0x0102) ~= 0x35 then\n'
+                '        local border, stars = ppu.readbyte(0x3F05), ppu.readbyte(0x3F09)\n'
+                '        gold = gold or border == 0x28\n'
+                '        coral = coral or border == 0x27\n'
+                '        bright = bright or stars == 0x30\n'
+                '        dim = dim or stars == 0x28\n'
+                '        animated = gold and coral and bright and dim\n'
+                '    end\n'
                 '    local action = memory.readbyte(0x0103)\n'
                 '    booted = booted or (memory.readbyte(0x0102) == 0x35\n'
                 '        and (action == 0xAC or action == 0x53))\n'
                 '    local pc = memory.getregister("pc")\n'
                 '    running = running or (booted and pc >= 0x200 and pc < 0xE000)\n'
                 'end\n'
-                'out:write(string.format("%d %d %d\\n", loading and 1 or 0,\n'
-                '    booted and 1 or 0, running and 1 or 0))\n'
+                'out:write(string.format("%d %d %d %d %d\\n", loading and 1 or 0,\n'
+                '    animated and 1 or 0, booted and 1 or 0, running and 1 or 0,\n'
+                '    heard and stopped and not early and 1 or 0))\n'
                 'out:close()\n'
                 'emu.exit()\n'
             )
             env = dict(os.environ, HOME=str(home), SDL_AUDIODRIVER="dummy")
             result = subprocess.run(
-                [xvfb, "-a", emulator, "--no-config", "1", "--sound", "0",
+                [xvfb, "-a", emulator, "--no-config", "1", "--sound", "1",
                  "--loadlua", str(script), str(image)],
                 env=env, capture_output=True, text=True, timeout=60,
             )
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-            self.assertEqual((home / "result").read_text(), "1 1 1\n")
+            self.assertEqual((home / "result").read_text(), "1 1 1 1 1\n")

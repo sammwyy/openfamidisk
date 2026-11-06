@@ -89,6 +89,7 @@ class BiosTests(unittest.TestCase):
         self.assertEqual(mem[0x0102:0x0104], [0x35, 0xAC])
         self.assertEqual(mem[0x2001], 0x06)
         self.assertEqual(mem[0x16], 0)
+        self.assertEqual(mem[0x4015], 0)
         self.assertEqual(mem.stream, [0, 0])
         self.assertIn(0xED, mem.controls)
         self.assertEqual(mem.controls[-1], 0x2E)
@@ -98,8 +99,51 @@ class BiosTests(unittest.TestCase):
         run_until(cpu, 0xE1F8)
         self.assertEqual(mem[0x2001], 0x0A)
         self.assertEqual(mem[0xFE], 0x0A)
+        self.assertEqual(mem[0xFF], 0x90)
         self.assertGreater(len(mem.ppu), 1024)
-        self.assertEqual(mem.ppu[-7:], list(range(1, 8)))
+        self.assertEqual(mem.ppu[-6:], [30, 31, 32, 33, 32, 31])
+        self.assertEqual(mem[0x4008], 0xFF)
+        self.assertEqual(mem[0x400A], 0x6A)
+        self.assertEqual(mem[0x4015], 0)
+
+    def test_loading_animation_preserves_cpu_registers(self):
+        cpu, mem = machine(inserted=False)
+        run_until(cpu, 0xE1F8)
+        cpu.a, cpu.x, cpu.y = 0x42, 0x21, 0x17
+        for frame in range(1, 49):
+            cpu.nmi()
+            run_until(cpu, 0xE1F8)
+            if frame in (12, 24, 36):
+                self.assertEqual(mem[0x400A], {12: 0x6A, 24: 0x5E, 36: 0x54}[frame])
+                self.assertEqual(mem[0x4015], 4)
+        self.assertEqual((cpu.a, cpu.x, cpu.y), (0x42, 0x21, 0x17))
+        self.assertEqual(mem[0x14], 48)
+        self.assertEqual(mem[0x4015], 0)
+        self.assertEqual(mem[0x1A], 0xFF)
+        self.assertEqual(mem.ppu[-2:], [0x26, 0x30])
+
+    def test_loading_cue_waits_for_visible_screen(self):
+        cpu, mem = machine(inserted=False)
+        run_until(cpu, 0xE1F8)
+        for _ in range(8):
+            cpu.nmi()
+            run_until(cpu, 0xE1F8)
+        mem[0x17] = 1
+        cpu.nmi()
+        run_until(cpu, 0xE1F8)
+        self.assertEqual(mem[0x1A], 0)
+        for _ in range(20):
+            cpu.nmi()
+            run_until(cpu, 0xE1F8)
+        self.assertEqual(mem[0x4015], 0)
+        mem[0x17] = 0
+        for _ in range(11):
+            cpu.nmi()
+            run_until(cpu, 0xE1F8)
+        self.assertEqual(mem[0x4015], 0)
+        cpu.nmi()
+        run_until(cpu, 0xE1F8)
+        self.assertEqual(mem[0x4015], 4)
 
     def test_explicit_file_list_and_ppu_transfer(self):
         stream = disk([(0, 0x6100, 0, b"\x33"), (7, 0x0200, 1, b"\x01\x02\x03")])
