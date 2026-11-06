@@ -27,6 +27,17 @@ FDS_TEST_IMAGE=/path/to/game.fds make test
 
 The integration test checks that the loading screen appears and the BIOS transfers control to the disk program. With a Super Mario Bros FDS image, it also checks that the title-screen demo keeps receiving game NMIs. It uses an isolated temporary home directory for FCEUX. Disk images are not included in the project.
 
+## Releases
+
+After committing the workflow, create and push a version tag in the form `vMAJOR.MINOR.PATCH` to trigger GitHub Actions:
+
+```sh
+git tag v0.1.0
+git push origin v0.1.0
+```
+
+The workflow builds and tests the BIOS, then creates a GitHub Release with `disksys.rom` attached. It does not include any disk images.
+
 ## Format and references
 
 The API addresses, vectors, block layout, and loading protocol were investigated using the original FDS BIOS as a behavioral reference and NESdev's [FDS BIOS](https://www.nesdev.org/wiki/FDS_BIOS) and [FDS disk format](https://www.nesdev.org/wiki/FDS_disk_format) documentation. The original ROM is neither included in the project nor needed to build it.

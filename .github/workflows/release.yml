@@ -1,0 +1,46 @@
+name: Release BIOS
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  release:
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+
+      - name: Validate version tag
+        shell: bash
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          if [[ ! "$RELEASE_TAG" =~ ^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]]; then
+            echo 'Expected a version tag like v0.1.0' >&2
+            exit 1
+          fi
+
+      - name: Build asm6f
+        run: |
+          git init -q "$RUNNER_TEMP/asm6f"
+          git -C "$RUNNER_TEMP/asm6f" remote add origin https://github.com/freem/asm6f.git
+          git -C "$RUNNER_TEMP/asm6f" fetch -q --depth 1 origin fd03633e7bf2612d7485280b291f9089197ae74b
+          git -C "$RUNNER_TEMP/asm6f" checkout -q --detach FETCH_HEAD
+          make -C "$RUNNER_TEMP/asm6f"
+
+      - name: Build and test ROM
+        run: |
+          python3 -m venv "$RUNNER_TEMP/venv"
+          "$RUNNER_TEMP/venv/bin/python" -m pip install 'py65==1.2.0'
+          make test ASM6F="$RUNNER_TEMP/asm6f/asm6f" PYTHON="$RUNNER_TEMP/venv/bin/python"
+
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: gh release create "$RELEASE_TAG" build/disksys.rom --verify-tag --title "$RELEASE_TAG" --generate-notes
