@@ -1,0 +1,3 @@
+/build/
+*.lst
+__pycache__/
