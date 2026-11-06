@@ -25,7 +25,7 @@ If `asm6f` is not on `PATH`, use `make ASM6F=/path/to/asm6f`. The output is `bui
 FDS_TEST_IMAGE=/path/to/game.fds make test
 ```
 
-The integration test checks that the loading screen appears and the BIOS transfers control to the disk program. It uses an isolated temporary home directory for FCEUX. Disk images are not included in the project.
+The integration test checks that the loading screen appears and the BIOS transfers control to the disk program. With a Super Mario Bros FDS image, it also checks that the title-screen demo keeps receiving game NMIs. It uses an isolated temporary home directory for FCEUX. Disk images are not included in the project.
 
 ## Format and references
 

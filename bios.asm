@@ -56,6 +56,9 @@ NMI:
     pha
     lda loadingactive
     beq @game
+    lda $0102
+    cmp #$35
+    beq @game
     pla
     jmp LoadingNMI
 @game:
@@ -63,9 +66,7 @@ NMI:
     bit $0100
     bmi @third
     bvs @first
-    pha
     inc frame
-    pla
     rti
 @first:
     jmp ($dff6)
@@ -431,6 +432,8 @@ Reset:
     cli
     jmp ($dffc)
 @boot:
+    lda #0
+    sta $0102
     jsr ShowLoading
 @retry:
     jsr LoadFiles

@@ -73,3 +73,41 @@ class FceuxTests(unittest.TestCase):
             )
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
             self.assertEqual((home / "result").read_text(), "1 1 1 1 1\n")
+
+    def test_smb_title_demo_keeps_game_nmi(self):
+        image = Path(os.environ["FDS_TEST_IMAGE"]).resolve()
+        if image.read_bytes()[16:19] != b"SMA":
+            self.skipTest("requires Super Mario Bros FDS image")
+        emulator = shutil.which("fceux")
+        xvfb = shutil.which("xvfb-run")
+        if not emulator or not xvfb:
+            self.skipTest("fceux and xvfb-run are required")
+
+        with tempfile.TemporaryDirectory() as directory:
+            home = Path(directory)
+            bios = home / ".fceux" / "disksys.rom"
+            bios.parent.mkdir()
+            shutil.copyfile(ROM, bios)
+            script = home / "test.lua"
+            script.write_text(
+                'local out = assert(io.open(os.getenv("HOME") .. "/result", "w"))\n'
+                'local alive = true\n'
+                'for frame = 1, 1500 do\n'
+                '    emu.frameadvance()\n'
+                '    if frame == 1050 or frame == 1500 then\n'
+                '        alive = alive and memory.readbyte(0x0102) == 0x35\n'
+                '            and memory.readbyte(0x2000) >= 0x80\n'
+                '    end\n'
+                'end\n'
+                'out:write(alive and "1\\n" or "0\\n")\n'
+                'out:close()\n'
+                'emu.exit()\n'
+            )
+            env = dict(os.environ, HOME=str(home), SDL_AUDIODRIVER="dummy")
+            result = subprocess.run(
+                [xvfb, "-a", emulator, "--no-config", "1", "--sound", "1",
+                 "--loadlua", str(script), str(image)],
+                env=env, capture_output=True, text=True, timeout=75,
+            )
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            self.assertEqual((home / "result").read_text(), "1\n")

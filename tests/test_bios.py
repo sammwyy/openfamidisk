@@ -257,11 +257,25 @@ class BiosTests(unittest.TestCase):
     def test_game_nmi_vector_preserves_accumulator(self):
         cpu, mem = machine(reset=False)
         mem[0x0100] = 0xC0
+        mem[0x0102:0x0104] = [0x35, 0xAC]
+        mem[0x16] = 6
         mem[0xDFFA:0xDFFC] = [0, 0xC3]
+        mem[0xC100:0xC103] = [0x4C, 0, 0xC1]
         cpu.a = 0x5A
         cpu.nmi()
-        run_until(cpu, 0xC300)
+        run_until(cpu, 0xC300, limit=100)
         self.assertEqual(cpu.a, 0x5A)
+        self.assertEqual(mem[0x16], 6)
+        self.assertEqual(mem[0x14], 0)
+
+    def test_cold_boot_with_invalid_warm_marker_uses_loading_nmi(self):
+        cpu, mem = machine(inserted=False)
+        mem[0x0102:0x0104] = [0x35, 0]
+        run_until(cpu, 0xE1F8)
+        cpu.nmi()
+        run_until(cpu, 0xE1F8)
+        self.assertEqual(mem[0x14], 1)
+        self.assertEqual(mem[0x0102], 0)
 
 
 if __name__ == "__main__":
