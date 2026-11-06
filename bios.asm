@@ -31,6 +31,7 @@ loadingtransfer = $17
 boxlow = $18
 boxhigh = $19
 cueframe = $1a
+cueindex = $1b
 
 FILLVALUE $ff
 ORG $e000
@@ -396,6 +397,7 @@ Reset:
     sta loadingactive
     sta loadingtransfer
     sta cueframe
+    sta cueindex
     sta $4010
     lda #$c0
     sta $4017
@@ -950,9 +952,12 @@ ShowLoading:
     sta PPUMASK
     lda #1
     sta loadingactive
+    lda #0
+    sta cueframe
+    sta cueindex
     lda #$ff
     sta $4008
-    lda #$6a
+    lda #$59
     sta $400a
     lda #0
     sta $4015
@@ -1086,50 +1091,37 @@ LoadingNMI:
     inc frame
     lda loadingtransfer
     beq @visible
-    lda cueframe
-    beq @paused
-    cmp #$ff
-    beq @paused
     lda #0
     sta cueframe
+    sta cueindex
     sta $4015
-@paused:
     jmp @done
 @visible:
-    lda cueframe
-    cmp #$ff
-    beq @color
     inc cueframe
     lda cueframe
-    cmp #12
-    beq @do
-    cmp #24
-    beq @re
-    cmp #36
-    beq @mi
-    cmp #48
-    beq @mute
-    jmp @color
-@do:
-    lda #$04
-    sta $4015
-    lda #$6a
-    bne @note
-@re:
-    lda #$5e
-    bne @note
-@mi:
-    lda #$54
-@note:
+    cmp #6
+    bne @color
+    lda #0
+    sta cueframe
+    ldx cueindex
+    lda LoadingTune,x
+    beq @rest
     sta $400a
+    lda #4
+    sta $4015
     lda #0
     sta $400b
-    jmp @color
-@mute:
+    jmp @advancecue
+@rest:
     lda #0
     sta $4015
-    lda #$ff
-    sta cueframe
+@advancecue:
+    inx
+    cpx #32
+    bne @storecue
+    ldx #0
+@storecue:
+    stx cueindex
 @color:
     lda frame
     and #7
@@ -1171,6 +1163,11 @@ LoadingNMI:
 LoadingPalette:
     db $0f,$30,$28,$00,$0f,$28,$30,$0f
     db $0f,$30,$28,$00,$0f,$30,$28,$00
+LoadingTune:
+    db $59,$54,$4b,0,$38,$54,$59,$54
+    db $4b,$38,$2c,$29,$2c,$3b,$38,0
+    db $4b,0,$59,$54,$4b,0,$38,$31
+    db $3b,$38,$31,$29,$2c,$29,$31,0
 BorderColors:
     db $28,$27,$26,$30
 StarColors:
