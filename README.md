@@ -6,7 +6,7 @@ An open-source Famicom Disk System BIOS written in 6502 assembly. It builds an 8
 
 **Prototype, not yet a general replacement for `disksys.rom`.** It boots from an FDS block stream, reads the disk identification and file count blocks, processes file headers and data, selects boot files by Boot ID, and transfers data to PRG-RAM or the PPU. `LoadFiles` (`$E1F8`) accepts two pointers placed after `JSR` and a file ID list terminated by `$FF`; it returns an error code in A and the number of loaded files in Y.
 
-The NMI/IRQ vectors, reset entry point, and a few basic utilities have their own implementations. Many other BIOS entry points retain only their addresses: write calls do not write to disk, and the unimplemented graphics and controller routines do no useful work. CRC validation, save writes, the disk insertion/side-change menu, and full RAM adapter timing are not implemented. Games that require those routines **are not supported**. Booting a commercial game has not been validated in a full FDS emulator.
+The NMI/IRQ vectors, reset entry point, and a few basic utilities have their own implementations. Many other BIOS entry points retain only their addresses: write calls do not write to disk, and the unimplemented graphics and controller routines do no useful work. CRC validation, save writes, the disk insertion/side-change menu, and full RAM adapter timing are not implemented. Games that require those routines **are not supported**. A locally supplied disk image successfully booted into its program in FCEUX 2.6.6; this does not establish compatibility with other games or emulators.
 
 ## Build and test
 
@@ -17,7 +17,13 @@ make
 make test
 ```
 
-If `asm6f` is not on `PATH`, use `make ASM6F=/path/to/asm6f`. The output is `build/disksys.rom`. Tests execute the built ROM in a 6502 CPU emulator (`py65`) with simulated disk and PPU registers; they **do not** replace testing in a full FDS emulator with a redistributable disk image.
+If `asm6f` is not on `PATH`, use `make ASM6F=/path/to/asm6f`. The output is `build/disksys.rom`. Unit tests execute the built ROM in a 6502 CPU emulator (`py65`) with simulated disk and PPU registers. To run the optional FCEUX integration test with your own FDS image, install `fceux` and `xvfb-run`, then run:
+
+```sh
+FDS_TEST_IMAGE=/path/to/game.fds make test
+```
+
+The integration test checks that the BIOS boots and transfers control to the disk program. It uses an isolated temporary home directory for FCEUX. Disk images are not included in the project.
 
 ## Format and references
 

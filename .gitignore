@@ -1,3 +1,6 @@
 /build/
 *.lst
 __pycache__/
+*.nes
+*.fds
+*.rom

@@ -25,6 +25,7 @@ fileid = $10
 area = $11
 scratch = $12
 frame = $14
+blockready = $15
 
 FILLVALUE $ff
 ORG $e000
@@ -292,7 +293,9 @@ UnknownEC22:
     rts
 PAD $ee17
 StartMotor:
-    lda #$6d
+    lda #$2e
+    sta DISKCTRL
+    lda #$ed
     sta $fa
     sta DISKCTRL
     rts
@@ -378,6 +381,9 @@ Reset:
     sta $4022
     sta MASTERIO
     sta frame
+    sta $4010
+    lda #$c0
+    sta $4017
     lda #$06
     sta $fe
     sta PPUMASK
@@ -431,9 +437,12 @@ UnsupportedWrite:
     rts
 
 LoadEngine:
+    php
+    sei
     lda #0
     sta loaded
     sta fault
+    sta blockready
     lda DRIVE
     and #1
     beq @present
@@ -626,11 +635,22 @@ LoadEngine:
 @finish:
     jsr StopMotor
     ldy loaded
+    plp
     lda fault
     rts
 
 ExpectBlock:
     sta scratch
+    lda blockready
+    bne @next
+    inc blockready
+    jmp @scan
+@next:
+    lda $fa
+    and #$bf
+    sta DISKCTRL
+    lda $fa
+    sta DISKCTRL
 @scan:
     jsr ReadByte
     ldx fault
@@ -656,6 +676,10 @@ ReadByte:
 @wait:
     lda DISKSTATUS
     bmi @ready
+    sta scratch+1
+    and #2
+    bne @ready
+    lda scratch+1
     and #$40
     bne @eof
     lda DRIVE

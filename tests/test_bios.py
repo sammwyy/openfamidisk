@@ -88,7 +88,7 @@ class BiosTests(unittest.TestCase):
         self.assertEqual(mem[0x6100], 0)
         self.assertEqual(mem[0x0102:0x0104], [0x35, 0xAC])
         self.assertEqual(mem.stream, [0, 0])
-        self.assertIn(0x6D, mem.controls)
+        self.assertIn(0xED, mem.controls)
         self.assertEqual(mem.controls[-1], 0x2E)
 
     def test_explicit_file_list_and_ppu_transfer(self):
@@ -148,6 +148,7 @@ class BiosTests(unittest.TestCase):
         run_until(cpu, 0xC000)
         self.assertEqual(mem.controls, [])
         self.assertEqual(mem[0x2000], 0x10)
+        self.assertEqual(mem[0x4017], 0xC0)
 
     def test_invalid_cpu_destination_is_not_written(self):
         cpu, mem = machine(disk([(0, 0x2000, 0, b"\xA9\x77")]))
