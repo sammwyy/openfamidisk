@@ -4,9 +4,11 @@ An open-source Famicom Disk System BIOS written in 6502 assembly. It builds an 8
 
 ## Status
 
-**Prototype, not yet a general replacement for `disksys.rom`.** It boots from an FDS block stream, reads the disk identification and file count blocks, processes file headers and data, selects boot files by Boot ID, and transfers data to PRG-RAM or the PPU. `LoadFiles` (`$E1F8`) accepts two pointers placed after `JSR` and a file ID list terminated by `$FF`; it returns an error code in A and the number of loaded files in Y.
+**Prototype, not yet a general replacement for `disksys.rom`.** Cold boots display an original `LOADING` screen while the disk is read. The BIOS reads the disk identification and file count blocks, processes file headers and data, selects boot files by Boot ID, and transfers data to PRG-RAM or the PPU. `LoadFiles` (`$E1F8`) accepts two pointers placed after `JSR` and a file ID list terminated by `$FF`; it returns an error code in A and the number of loaded files in Y.
 
 The NMI/IRQ vectors, reset entry point, and a few basic utilities have their own implementations. Many other BIOS entry points retain only their addresses: write calls do not write to disk, and the unimplemented graphics and controller routines do no useful work. CRC validation, save writes, the disk insertion/side-change menu, and full RAM adapter timing are not implemented. Games that require those routines **are not supported**. A locally supplied disk image successfully booted into its program in FCEUX 2.6.6; this does not establish compatibility with other games or emulators.
+
+The loading screen temporarily uses `$0400–$047F` to preserve CHR tiles until boot completes. Boot files that write to this RAM range may conflict with it.
 
 ## Build and test
 
@@ -23,7 +25,7 @@ If `asm6f` is not on `PATH`, use `make ASM6F=/path/to/asm6f`. The output is `bui
 FDS_TEST_IMAGE=/path/to/game.fds make test
 ```
 
-The integration test checks that the BIOS boots and transfers control to the disk program. It uses an isolated temporary home directory for FCEUX. Disk images are not included in the project.
+The integration test checks that the loading screen appears and the BIOS transfers control to the disk program. It uses an isolated temporary home directory for FCEUX. Disk images are not included in the project.
 
 ## Format and references
 

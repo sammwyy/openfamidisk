@@ -87,9 +87,19 @@ class BiosTests(unittest.TestCase):
         self.assertEqual(mem[0x6000:0x6003], [0xA9, 0x42, 0x60])
         self.assertEqual(mem[0x6100], 0)
         self.assertEqual(mem[0x0102:0x0104], [0x35, 0xAC])
+        self.assertEqual(mem[0x2001], 0x06)
+        self.assertEqual(mem[0x16], 0)
         self.assertEqual(mem.stream, [0, 0])
         self.assertIn(0xED, mem.controls)
         self.assertEqual(mem.controls[-1], 0x2E)
+
+    def test_cold_boot_displays_loading_screen(self):
+        cpu, mem = machine(inserted=False)
+        run_until(cpu, 0xE1F8)
+        self.assertEqual(mem[0x2001], 0x0A)
+        self.assertEqual(mem[0xFE], 0x0A)
+        self.assertGreater(len(mem.ppu), 1024)
+        self.assertEqual(mem.ppu[-7:], list(range(1, 8)))
 
     def test_explicit_file_list_and_ppu_transfer(self):
         stream = disk([(0, 0x6100, 0, b"\x33"), (7, 0x0200, 1, b"\x01\x02\x03")])
@@ -147,6 +157,7 @@ class BiosTests(unittest.TestCase):
         mem[0x0102:0x0104] = [0x35, 0xAC]
         run_until(cpu, 0xC000)
         self.assertEqual(mem.controls, [])
+        self.assertEqual(mem.ppu, [])
         self.assertEqual(mem[0x2000], 0x10)
         self.assertEqual(mem[0x4017], 0xC0)
 

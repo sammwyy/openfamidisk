@@ -26,6 +26,7 @@ area = $11
 scratch = $12
 frame = $14
 blockready = $15
+loadingactive = $16
 
 FILLVALUE $ff
 ORG $e000
@@ -381,6 +382,7 @@ Reset:
     sta $4022
     sta MASTERIO
     sta frame
+    sta loadingactive
     sta $4010
     lda #$c0
     sta $4017
@@ -414,10 +416,13 @@ Reset:
     cli
     jmp ($dffc)
 @boot:
+    jsr ShowLoading
+@retry:
     jsr LoadFiles
     dw BootDiskID
     dw BootList
-    bne @boot
+    bne @retry
+    jsr HideLoading
     lda #$35
     sta $0102
     lda #$ac
@@ -585,11 +590,19 @@ LoadEngine:
     jsr SkipCRC
     lda #4
     jsr ExpectBlock
-    bne @finish
+    beq @blockdata
+    jmp @finish
+@blockdata:
     lda selected
     bne @data
     lda area
     beq @data
+    ldx loadingactive
+    beq @ppuaddr
+    ldx #$06
+    stx $fe
+    stx PPUMASK
+@ppuaddr:
     lda PPUSTATUS
     lda dest+1
     sta PPUADDR
@@ -623,6 +636,27 @@ LoadEngine:
     jmp @data
 @dataend:
     jsr SkipCRC
+    lda loadingactive
+    beq @skiploading
+    lda selected
+    bne @skiploading
+    lda area
+    beq @skiploading
+    cmp #1
+    bne @showloading
+    jsr SaveLoadingTiles
+    jsr DrawLoadingFont
+@showloading:
+    lda PPUSTATUS
+    lda #0
+    sta $2005
+    sta $2005
+    lda $ff
+    sta PPUCTRL
+    lda #$0a
+    sta $fe
+    sta PPUMASK
+@skiploading:
     lda selected
     bne @skipcount
     inc loaded
@@ -697,6 +731,137 @@ ReadByte:
 @ready:
     lda DISKDATA
     rts
+
+ShowLoading:
+    ldx #2
+@vblank:
+    lda PPUSTATUS
+    bpl @vblank
+    dex
+    bne @vblank
+    jsr SaveLoadingTiles
+    jsr DrawLoadingFont
+    lda PPUSTATUS
+    lda #$3f
+    sta PPUADDR
+    lda #0
+    sta PPUADDR
+    lda #$01
+    sta PPUDATA
+    lda #$30
+    sta PPUDATA
+    lda PPUSTATUS
+    lda #$20
+    sta PPUADDR
+    lda #0
+    sta PPUADDR
+    ldx #4
+    ldy #0
+@clear:
+    sta PPUDATA
+    iny
+    bne @clear
+    dex
+    bne @clear
+    lda PPUSTATUS
+    lda #$21
+    sta PPUADDR
+    lda #$cc
+    sta PPUADDR
+    ldx #1
+@text:
+    txa
+    sta PPUDATA
+    inx
+    cpx #8
+    bne @text
+    lda PPUSTATUS
+    lda #0
+    sta $2005
+    sta $2005
+    lda #$0a
+    sta $fe
+    sta PPUMASK
+    lda #1
+    sta loadingactive
+    rts
+
+HideLoading:
+    lda #$06
+    sta $fe
+    sta PPUMASK
+    jsr RestoreLoadingTiles
+    lda #0
+    sta loadingactive
+    rts
+
+SaveLoadingTiles:
+    lda PPUSTATUS
+    lda #$10
+    sta PPUADDR
+    lda #0
+    sta PPUADDR
+    lda PPUDATA
+    ldx #0
+@read:
+    lda PPUDATA
+    sta $0400,x
+    inx
+    bpl @read
+    rts
+
+RestoreLoadingTiles:
+    lda PPUSTATUS
+    lda #$10
+    sta PPUADDR
+    lda #0
+    sta PPUADDR
+    ldx #0
+@write:
+    lda $0400,x
+    sta PPUDATA
+    inx
+    bpl @write
+    rts
+
+DrawLoadingFont:
+    lda PPUSTATUS
+    lda #$10
+    sta PPUADDR
+    lda #0
+    sta PPUADDR
+    ldx #16
+@blank:
+    sta PPUDATA
+    dex
+    bne @blank
+    ldy #0
+@font:
+    ldx #8
+@row:
+    lda LoadingFont,y
+    sta PPUDATA
+    iny
+    dex
+    bne @row
+    ldx #8
+    lda #0
+@plane:
+    sta PPUDATA
+    dex
+    bne @plane
+    cpy #56
+    bne @font
+    rts
+
+LoadingFont:
+    db $60,$60,$60,$60,$60,$60,$7e,$00
+    db $3c,$66,$66,$66,$66,$66,$3c,$00
+    db $18,$3c,$66,$66,$7e,$66,$66,$00
+    db $7c,$66,$66,$66,$66,$66,$7c,$00
+    db $3c,$18,$18,$18,$18,$18,$3c,$00
+    db $66,$76,$7e,$7e,$6e,$66,$66,$00
+    db $3c,$66,$60,$6e,$66,$66,$3c,$00
 
 PAD $fffa
     dw NMI,Reset,IRQ
